@@ -168,8 +168,8 @@ connection = RestModule(user, passw)
 # volume = connection.show_volume_uid(uid)
 # pprint(volume)
 
-name = input('Volume UID: ')
-volume = connection.show_volume_name(name)
-pprint(volume)
+# name = input('Volume Name: ')
+# volume = connection.show_volume_name(name)
+# pprint(volume)
 
 
