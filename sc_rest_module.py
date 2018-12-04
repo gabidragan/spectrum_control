@@ -1,6 +1,7 @@
 import requests
 from sc_settings import user, passw, ip
 from pprint import pprint
+import arrow
 
 # Use this to debug
 # import pdb; pdb.set_trace()
@@ -8,6 +9,9 @@ from pprint import pprint
 # Ignore the InsecureRequestWarning message:
 requests.packages.urllib3.disable_warnings()
 
+
+def start_time():
+    return arrow.utcnow().shift(weeks=-1).format('X')
 
 
 base_url = 'https://' + ip + ':9569/srm/'
@@ -154,6 +158,29 @@ class RestModule(object):
             if vol['Name'].lower() == name.lower():
                 return vol
 
+    def show_volume_performance(self, storage_system, volume_name):
+        """ GET one or more volumes wich meet a criteria from Spectrum Control"""
+
+        rest_volume_performance = rest_storage_systems + storage_system + '/Volumes/Performance?metrics=803,806&granularity=daily&startTime=' + start_time() + str('000')
+
+        request = self.session.get(rest_volume_performance)
+
+        if request.status_code != 200:
+            print('Unable to open: {}, status code: {}'.format(rest_volume_performance, request.status_code))
+            exit(1)
+
+        content_type = request.headers.get('content-type')
+        if content_type != 'application/json':
+            print('Unsupported Content-Type: {}. We want JSON'.format(content_type))
+            exit(1)
+
+        performance = request.json()
+        output = []
+        for perf in performance[1:]:
+            if f'{volume_name}<br /> ' in perf['deviceName']:
+                output.append(perf)
+        return output
+
 
 
 # usage
@@ -168,8 +195,11 @@ connection = RestModule(user, passw)
 # volume = connection.show_volume_uid(uid)
 # pprint(volume)
 
-# name = input('Volume Name: ')
-# volume = connection.show_volume_name(name)
-# pprint(volume)
+name = input('Volume Name: ')
+volume = connection.show_volume_name(name)
+stoarage_system = connection.show_storage_system(volume['Storage System'])
+performance = connection.show_volume_performance(stoarage_system['id'], volume['Name'])
+
+pprint(performance)
 
 
