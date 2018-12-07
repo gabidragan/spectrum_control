@@ -10,7 +10,7 @@ import arrow
 requests.packages.urllib3.disable_warnings()
 
 
-def start_time():
+def one_week_ago():
     return arrow.utcnow().shift(weeks=-1).format('X')
 
 
@@ -40,12 +40,12 @@ class RestModule(object):
         # First login to Spectrum Control for authentication
         self.session.post(login_form, data={'j_username': user, 'j_password': password}, )
 
-    def get_storage_systems(self):
-        """ GET all the Storage Systems monitored by Spectrum Control"""
+    def request(self, url):
+        """ Start a session on Spectrum Control and check the return code and JSON format"""
 
-        request = self.session.get(rest_storage_systems)
+        request = self.session.get(url)
         if request.status_code != 200:
-            print('Unable to open: {}, status code: {}'.format(rest_storage_systems, request.status_code))
+            print('Unable to open: {}, status code: {}'.format(url, request.status_code))
             exit(1)
 
         content_type = request.headers.get('content-type')
@@ -54,87 +54,52 @@ class RestModule(object):
             exit(1)
 
         return request.json()
+
+    def get_storage_systems(self):
+        """ GET all the Storage Systems monitored by Spectrum Control"""
+
+        data = self.request(rest_storage_systems)
+        return data
 
     def show_storage_system(self, storage_name):
         """ GET a specific Storage Systems info from Spectrum Control"""
 
-        request = self.session.get(rest_storage_systems)
-
-        if request.status_code != 200:
-            print('Unable to open: {}, status code: {}'.format(rest_storage_systems, request.status_code))
-            exit(1)
-
-        content_type = request.headers.get('content-type')
-        if content_type != 'application/json':
-            print('Unsupported Content-Type: {}. We want JSON'.format(content_type))
-            exit(1)
-
-        stoarage_systems = request.json()
+        stoarage_systems = self.request(rest_storage_systems)
         for sys in stoarage_systems:
             if sys['Name'] == storage_name:
                 return sys
 
-    def get_storage_system_volumes(self, storage_name):
-        """ GET all the Volumes which belongs to a Storage Systems """
+    def get_storage_system_id(self, storage_name):
+        """ GET the storage system ID which belongs to a Storage Systems """
 
-        request = self.session.get(rest_storage_systems)
-        if request.status_code != 200:
-            print('Unable to open: {}, status code: {}'.format(rest_storage_systems, request.status_code))
-            exit(1)
-
-        content_type = request.headers.get('content-type')
-        if content_type != 'application/json':
-            print('Unsupported Content-Type: {}. We want JSON'.format(content_type))
-            exit(1)
-
-        stoarage_systems = request.json()
-        for sys in stoarage_systems:
+        # Get the id of the Storage System
+        storage_systems = self.request(rest_storage_systems)
+        for sys in storage_systems:
             if sys['Name'] == storage_name:
-                id = sys['id']
+                return sys['id']
 
-        rest_volumes = rest_storage_systems + id + '/Volumes/'
-        request = self.session.get(rest_volumes)
-        if request.status_code != 200:
-            print('Unable to open: {}, status code: {}'.format(rest_volumes, request.status_code))
-            exit(1)
+    def get_storage_system_volumes(self, id):
 
-        content_type = request.headers.get('content-type')
-        if content_type != 'application/json':
-            print('Unsupported Content-Type: {}. We want JSON'.format(content_type))
-            exit(1)
+        # Build URL in /StorageSystems/<id>/Volumes format
+        rest_volumes_storage = rest_storage_systems \
+                       + id \
+                       + '/Volumes/'
+        print(rest_volumes_storage)
 
-        return request.json()
+        vols = self.request(rest_volumes_storage)
+        pprint(vols)
+        return vols
 
     def get_volumes(self):
         """ GET all the Volumes monitored by Spectrum Control"""
 
-        request = self.session.get(rest_volumes)
-        if request.status_code != 200:
-            print('Unable to open: {}, status code: {}'.format(rest_storage_systems, request.status_code))
-            exit(1)
-
-        content_type = request.headers.get('content-type')
-        if content_type != 'application/json':
-            print('Unsupported Content-Type: {}. We want JSON'.format(content_type))
-            exit(1)
-
-        return request.json()
+        data = self.request(rest_volumes)
+        return data
 
     def show_volume_uid(self, uid):
         """ GET one or more volumes wich meet a criteria from Spectrum Control"""
 
-        request = self.session.get(rest_volumes)
-
-        if request.status_code != 200:
-            print('Unable to open: {}, status code: {}'.format(rest_volumes, request.status_code))
-            exit(1)
-
-        content_type = request.headers.get('content-type')
-        if content_type != 'application/json':
-            print('Unsupported Content-Type: {}. We want JSON'.format(content_type))
-            exit(1)
-
-        volumes = request.json()
+        volumes = self.request(rest_volumes)
         for vol in volumes:
             if vol['Volume Unique ID'].lower() == uid.lower():
                 return vol
@@ -142,64 +107,56 @@ class RestModule(object):
     def show_volume_name(self, name):
         """ GET one or more volumes wich meet a criteria from Spectrum Control"""
 
-        request = self.session.get(rest_volumes)
-
-        if request.status_code != 200:
-            print('Unable to open: {}, status code: {}'.format(rest_volumes, request.status_code))
-            exit(1)
-
-        content_type = request.headers.get('content-type')
-        if content_type != 'application/json':
-            print('Unsupported Content-Type: {}. We want JSON'.format(content_type))
-            exit(1)
-
-        volumes = request.json()
+        volumes = self.request(rest_volumes)
         for vol in volumes:
-            if vol['Name'].lower() == name.lower():
+            if vol['Name'] == name:
                 return vol
 
     def show_volume_performance(self, storage_system, volume_name):
         """ GET one or more volumes wich meet a criteria from Spectrum Control"""
 
-        rest_volume_performance = rest_storage_systems + storage_system + '/Volumes/Performance?metrics=803,806&granularity=daily&startTime=' + start_time() + str('000')
+        # Build URL in the following format:
+        # /StorageSystems/<Storage_ID>/Volumes/Performance?>&metrics=<metric_ids>&granularity=(sample | hourly | daily | monthly)&startTime=<start_time>
+        rest_volume_performance = rest_storage_systems \
+                                  + storage_system \
+                                  + '/Volumes/Performance?metrics=803,806&granularity=daily&startTime=' \
+                                  + one_week_ago() \
+                                  + str('000')
 
-        request = self.session.get(rest_volume_performance)
-
-        if request.status_code != 200:
-            print('Unable to open: {}, status code: {}'.format(rest_volume_performance, request.status_code))
-            exit(1)
-
-        content_type = request.headers.get('content-type')
-        if content_type != 'application/json':
-            print('Unsupported Content-Type: {}. We want JSON'.format(content_type))
-            exit(1)
-
-        performance = request.json()
+        performance = self.request(rest_volume_performance)
         output = []
         for perf in performance[1:]:
             if f'{volume_name}<br /> ' in perf['deviceName']:
                 output.append(perf)
         return output
 
+    def get_perf(self):
+        url = "https://212.113.90.56:9569/srm/REST/api/v1/StorageSystems/2031697/Volumes/Performance?metrics=806&startTime=1543930708000&metrics=sample"
+        return self.request(url)
 
 
 # usage
 connection = RestModule(user, passw)
-# storage_name = input('Storage name: ')
-# stoarage_system = connection.show_storage_system(storage_name)
-# volumes = connection.get_storage_system_volumes(storage_name)
-# pprint(stoarage_system)
-# pprint(volumes)
+# pprint(connection.get_perf())
+storage_name = input('Storage name: ')
+storage_system_id = connection.get_storage_system_id(storage_name)
+pprint(f'ID: {storage_system_id}')
+
+volumes = connection.get_storage_system_volumes(storage_system_id)
+pprint(volumes)
 
 # uid = input('Volume UID: ')
 # volume = connection.show_volume_uid(uid)
 # pprint(volume)
 
-name = input('Volume Name: ')
-volume = connection.show_volume_name(name)
-stoarage_system = connection.show_storage_system(volume['Storage System'])
-performance = connection.show_volume_performance(stoarage_system['id'], volume['Name'])
-
-pprint(performance)
-
+# name = input('Volume Name: ')
+# volume = connection.show_volume_name(name)
+# #print('Volumul {} apartine storage-ului {}.'.format(volume['Name'], volume['Storage System']))
+# pprint(volume)
+# stoarage_system = connection.show_storage_system(volume['Storage System'])
+# print('Storage-ul {} are ID=ul {}.'.format(volume['Storage System'], stoarage_system['id']))
+# performance = connection.show_volume_performance(stoarage_system['id'], volume['Name'])
+#
+# pprint(performance)
+#
 
