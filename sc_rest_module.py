@@ -14,12 +14,21 @@ def one_week_ago():
     return arrow.utcnow().shift(weeks=-1).format('X')
 
 
+def one_day_ago():
+    return arrow.utcnow().shift(days=-1).format('X')
+
+
+def one_hour_ago():
+    return arrow.utcnow().shift(hours=-1).format('X')
+
+
 base_url = 'https://' + ip + ':9569/srm/'
 login_form = base_url + 'j_security_check'
 
 rest_root = base_url + 'REST/api/v1/'
 rest_storage_systems = rest_root + 'StorageSystems/'
 rest_volumes = rest_root + 'Volumes/'
+rest_pools = rest_root + 'Pools/'
 
 
 class RestModule(object):
@@ -96,31 +105,48 @@ class RestModule(object):
         data = self.request(rest_volumes)
         return data
 
-    def show_volume_uid(self, uid):
-        """ GET one or more volumes wich meet a criteria from Spectrum Control"""
+    def show_volume_by_uid(self, uid):
+        """ GET the volume with specific UID from Spectrum Control"""
 
         volumes = self.request(rest_volumes)
         for vol in volumes:
             if vol['Volume Unique ID'].lower() == uid.lower():
                 return vol
 
-    def show_volume_name(self, name):
-        """ GET one or more volumes wich meet a criteria from Spectrum Control"""
+    def show_volume_by_name(self, name):
+        """ GET the fist volume with specific name from Spectrum Control"""
 
         volumes = self.request(rest_volumes)
         for vol in volumes:
             if vol['Name'] == name:
                 return vol
 
-    def show_volume_performance(self, storage_system, volume_name):
-        """ GET one or more volumes wich meet a criteria from Spectrum Control"""
+    def show_pool_by_name(self, name):
+        """ GET the first pool with specific name from Spectrum Control"""
+
+        pools = self.request(rest_pools)
+        for pool in pools:
+            if pool['Name'] == name:
+                return pool
+
+    def show_volume_performance(self,
+                                storage_system,
+                                volume_name,
+                                granularity="daily",
+                                period=one_hour_ago):
+        """ GET the Read and Write IOs of a volume from Spectrum Control"""
 
         # Build URL in the following format:
-        # /StorageSystems/<Storage_ID>/Volumes/Performance?>&metrics=<metric_ids>&granularity=(sample | hourly | daily | monthly)&startTime=<start_time>
+        # /StorageSystems/<Storage_ID>/Volumes/Performance?
+        #                                      &metrics=<metric_ids>
+        #                                      &granularity=(sample | hourly | daily | monthly)
+        #                                      &startTime=<start_time>
         rest_volume_performance = rest_storage_systems \
                                   + storage_system \
-                                  + '/Volumes/Performance?metrics=803,806&granularity=daily&startTime=' \
-                                  + one_week_ago() \
+                                  + '/Volumes/Performance?metrics=803,806&granularity=' \
+                                  + granularity \
+                                  + '&startTime=' \
+                                  + period() \
                                   + str('000')
 
         performance = self.request(rest_volume_performance)
@@ -135,28 +161,65 @@ class RestModule(object):
         return self.request(url)
 
 
-# usage
-connection = RestModule(user, passw)
-# pprint(connection.get_perf())
-storage_name = input('Storage name: ')
-storage_system_id = connection.get_storage_system_id(storage_name)
-pprint(f'ID: {storage_system_id}')
+def check_activity(performance):
+    """ Check if a volume performance shows any activity """
 
-volumes = connection.get_storage_system_volumes(storage_system_id)
-pprint(volumes)
+    activity = "Inactive"
+    for perf in performance:
+        if perf['maxValue'] > 0:
+            activity = "Active"
+    return activity
+
+
+def print_volume(volume):
+    """ Print out summary of a volume"""
+
+    print(f'{volume["Name"]} '
+          f'{volume["I/O Group"]} '
+          f'{volume["Pool"]} '
+          f'{volume["Capacity"]}GiB '
+          f'{volume["Volume Unique ID"]} '
+           )
+    return None
+
+
+def show_vdisk_activity(name):
+    """
+    This function is checking if a volume has activity in the past hour.
+    The function returns "Active" or "Inactive"
+    """
+
+    connection = RestModule(user, passw)
+    volume = connection.show_volume_by_name(name)
+    print_volume(volume)
+    stg_sys = connection.show_storage_system(volume['Storage System'])
+    performance = connection.show_volume_performance(stg_sys['id'], volume['Name'], 'sample')
+    return check_activity(performance)
+
+
+### Usage:
 
 # uid = input('Volume UID: ')
 # volume = connection.show_volume_uid(uid)
 # pprint(volume)
 
+#########################################
+
 # name = input('Volume Name: ')
 # volume = connection.show_volume_name(name)
-# #print('Volumul {} apartine storage-ului {}.'.format(volume['Name'], volume['Storage System']))
+# print(f'The volume {volume['Name']} belongs to {volume['Storage System']}.')
 # pprint(volume)
-# stoarage_system = connection.show_storage_system(volume['Storage System'])
-# print('Storage-ul {} are ID=ul {}.'.format(volume['Storage System'], stoarage_system['id']))
-# performance = connection.show_volume_performance(stoarage_system['id'], volume['Name'])
+#
+# stg_sys = connection.show_storage_system(volume['Storage System'])
+# print('Storage-ul {} are ID=ul {}.'.format(volume['Storage System'], stg_sys['id']))
+# performance = connection.show_volume_performance(stg_sys['id'], volume['Name'], 'sample')
 #
 # pprint(performance)
 #
+
+#########################################
+
+# name = input('Volume Name: ')
+# print(show_vdisk_activity(name))
+
 
